@@ -1,9 +1,11 @@
 #include <Arduino.h>
 #include <Keypad.h>
-#include <Wifi.h>
+#include <WiFi.h>
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include <Firebase_ESP_Client.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
 
@@ -30,6 +32,7 @@ void detectMovememnt();
 void checkKEY();
 void connectFirebase();
 void readFirebase();
+void convertToString();
 
 // initiate lcd
 int lcdColumn = 16;
@@ -67,8 +70,8 @@ byte rowPins[ROWS] = {12, 14, 27, 26};
 byte colPins[COLS] = {2, 4, 5, 18};
 
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
-const int len_key = 5;
-char master_key[len_key] = {'1', '2', '3', '4', '1'};
+const int len_key = 6;
+char master_key[len_key] = {'1', '2', '3', '4', '1', '2'};
 char attempt_key[len_key];
 int z = 0;
 
@@ -96,6 +99,7 @@ unsigned long sendDataprevMillis = 0;
 int intValue;
 float floatValue;
 bool signinOK = false;
+String pin;
 
 void setup()
 {
@@ -123,13 +127,13 @@ void loop()
   if ((!isUnlock && now - sendDataprevMillis > 15000) || (!isUnlock && sendDataprevMillis == 0))
   {
     sendDataprevMillis = millis();
-    if (Firebase.RTDB.getBool(&fbdo, "/StorageData/isUnlock"))
+    if (Firebase.RTDB.getBool(&fbdo, "/SfbClQ6PRR9UKREP5BwO/isUnlock"))
     {
       isUnlock = fbdo.boolData();
       lastTrigger = millis();
     }
 
-    if (Firebase.RTDB.getString(&fbdo, "/StorageData/storageName"))
+    if (Firebase.RTDB.getString(&fbdo, "/SfbClQ6PRR9UKREP5BwO/storageName"))
     {
       storageName = fbdo.stringData();
       lcd.clear();
@@ -170,6 +174,8 @@ void loop()
     digitalWrite(greenLED, HIGH);
     digitalWrite(relayPin, HIGH);
 
+    lcd.setCursor(0, 1);
+    lcd.print("Unlocking ...");
     // activate motion sensor
     pinStatePrevious = pinStateCurrent;          // store old state
     pinStateCurrent = digitalRead(motionSensor); // read new state
@@ -190,7 +196,7 @@ void loop()
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print(storageName);
-    Firebase.RTDB.setBool(&fbdo, "StorageData/isUnlock", false);
+    Firebase.RTDB.setBool(&fbdo, "SfbClQ6PRR9UKREP5BwO/isUnlock", false);
   }
 
   if (motionDetected && (now - motionStart > timeInterval))
@@ -210,7 +216,7 @@ void loop()
     ultrasonic();
     Serial.print("calculating distance... ");
     Serial.println(distanceCm);
-    Firebase.RTDB.setFloat(&fbdo, "StorageData/depth", distanceCm);
+    Firebase.RTDB.setFloat(&fbdo, "SfbClQ6PRR9UKREP5BwO/depth", distanceCm);
   }
 }
 
@@ -268,43 +274,80 @@ void connectFirebase()
   Serial.print(uid);
 }
 
+String convertToString(char *a, int size)
+{
+  int i;
+  String s = "";
+  for (i = 0; i < size; i++)
+  {
+    s = s + a[i];
+  }
+  return s;
+}
+
 void checkKEY()
 {
-  int correct = 0;
   int i;
-  for (i = 0; i < len_key; i++)
-  {
-    if (attempt_key[i] == master_key[i])
-    {
-      correct++;
-    }
-  }
-  if (correct == len_key && z == len_key)
-  {
-    lcd.setCursor(0, 1);
-    lcd.print("Correct key!");
-    Serial.println("unlocking storage");
-    isUnlock = true;
-    lastTrigger = millis();
+  pin = convertToString(attempt_key, len_key);
 
-    z = 0;
+  HTTPClient http;
+  String apiEndpoint = "https://hi-dil.com/api/v1/storage/validatepin";
+
+  http.begin(apiEndpoint);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "haidil272");
+
+  StaticJsonDocument<200> doc;
+
+  doc["retrievedPin"] = pin;
+  doc["storageID"] = STORAGE_ID;
+
+  String requestBody;
+  serializeJson(doc, requestBody);
+
+  int httpResponseCode = http.POST(requestBody);
+
+  if (httpResponseCode > 0)
+  {
+    String response = http.getString();
+    Serial.println(httpResponseCode);
+    Serial.println(response);
+    if (response == "true")
+    {
+      lcd.setCursor(0, 1);
+      lcd.print("Correct key!");
+      Serial.println("unlocking storage");
+      digitalWrite(greenLED, HIGH);
+      digitalWrite(relayPin, HIGH);
+      lastTrigger = millis();
+    }
+    else
+    {
+      lcd.setCursor(0, 1);
+      lcd.print("Incorrect Key");
+      digitalWrite(redLED, HIGH);
+      delay(3000);
+      digitalWrite(redLED, LOW);
+      z = 0;
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print(storageName);
+    }
   }
   else
   {
-    lcd.setCursor(0, 1);
-    lcd.print("Incorrect Key");
-    digitalWrite(redLED, HIGH);
-    delay(3000);
-    digitalWrite(redLED, LOW);
-    z = 0;
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(storageName);
+    Serial.printf("Error occurred while sending HTTP POST: %s\n", http.errorToString(httpResponseCode).c_str());
   }
+
   for (int zz = 0; zz < len_key; zz++)
   {
     attempt_key[zz] = 0;
   }
+
+  // for (int zz = 0; zz < len_key; zz++)
+  // {
+  //   attempt_key[zz] = 0;
+  // }
 }
 
 void detectMovement()
