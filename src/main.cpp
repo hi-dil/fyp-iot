@@ -13,7 +13,7 @@
 #define STORAGE_ID "SfbClQ6PRR9UKREP5BwO"
 
 // Wifi config
-#define WIFI_SSID "Vento"
+#define WIFI_SSID "vento"
 #define WIFI_PASSWORD "haidil272"
 
 // Firebase config
@@ -54,6 +54,9 @@ const int echoPin = 33;
 boolean isUnlock = false;
 boolean motionDetected = false;
 boolean humanMovement = false;
+boolean unlockByQr = false;
+
+int currentPin = 0;
 
 // initiate keypad
 const byte ROWS = 4; // four rows
@@ -83,8 +86,8 @@ float distanceCm;
 long now = millis();
 long lastTrigger = 0;
 long motionStart = 0;
-int timeInterval = 30000;
-int timeForDistance = 120000;
+int timeInterval = 60000;
+int timeForDistance = 30000;
 
 // for motion sensor
 int pinStateCurrent = LOW;  // current state of pin
@@ -131,6 +134,12 @@ void loop()
     {
       isUnlock = fbdo.boolData();
       lastTrigger = millis();
+      currentPin = Firebase.RTDB.getInt(&fbdo, "/SfbClQ6PRR9UKREP5BwO/currentPin");
+
+        if (isUnlock) {
+          unlockByQr = true;
+          Serial.println(currentPin);
+        }  
     }
 
     if (Firebase.RTDB.getString(&fbdo, "/SfbClQ6PRR9UKREP5BwO/storageName"))
