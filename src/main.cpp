@@ -66,7 +66,7 @@ char keys[ROWS][COLS] = {
     {'1', '2', '3', 'A'},
     {'4', '5', '6', 'B'},
     {'7', '8', '9', 'C'},
-    {'*', '0', '#', 'D'}};
+    {'*', '0', ' ', 'D'}};
 
 // keypad pins
 byte rowPins[ROWS] = {12, 14, 27, 26};
@@ -86,8 +86,8 @@ float distanceCm;
 long now = millis();
 long lastTrigger = 0;
 long motionStart = 0;
-int timeInterval = 60000;
-int timeForDistance = 30000;
+int timeInterval = 10000;
+int timeForDistance = 10000;
 
 // for motion sensor
 int pinStateCurrent = LOW;  // current state of pin
@@ -136,10 +136,11 @@ void loop()
       lastTrigger = millis();
       currentPin = Firebase.RTDB.getInt(&fbdo, "/SfbClQ6PRR9UKREP5BwO/currentPin");
 
-        if (isUnlock) {
-          unlockByQr = true;
-          Serial.println(currentPin);
-        }  
+      if (isUnlock)
+      {
+        unlockByQr = true;
+        Serial.println(currentPin);
+      }
     }
 
     if (Firebase.RTDB.getString(&fbdo, "/SfbClQ6PRR9UKREP5BwO/storageName"))
@@ -206,6 +207,7 @@ void loop()
     lcd.setCursor(0, 0);
     lcd.print(storageName);
     Firebase.RTDB.setBool(&fbdo, "SfbClQ6PRR9UKREP5BwO/isUnlock", false);
+    z = 0;
   }
 
   if (motionDetected && (now - motionStart > timeInterval))
@@ -226,6 +228,63 @@ void loop()
     Serial.print("calculating distance... ");
     Serial.println(distanceCm);
     Firebase.RTDB.setFloat(&fbdo, "SfbClQ6PRR9UKREP5BwO/depth", distanceCm);
+
+    HTTPClient http;
+    String apiEndpoint = "https://hi-dil.com/api/v1/storage/motiondetect";
+
+    http.begin(apiEndpoint);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "haidil272");
+
+    StaticJsonDocument<200> doc;
+
+    if (unlockByQr)
+    {
+      doc["retrivedPin"] = currentPin;
+    }
+    else
+    {
+      doc["retrievedPin"] = pin;
+    }
+
+    doc["storageID"] = STORAGE_ID;
+
+    String requestBody;
+    serializeJson(doc, requestBody);
+
+    int httpResponseCode = http.POST(requestBody);
+
+    if (httpResponseCode > 0)
+    {
+      String response = http.getString();
+      Serial.println(httpResponseCode);
+      Serial.println(response);
+      if (response == "true")
+      {
+        lcd.clear();
+        lcd.setCursor(0, 1);
+        lcd.print("updated data to database");
+        Serial.println("successfully update data");
+        delay(2000);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print(storageName);
+      }
+      else
+      {
+        lcd.clear();
+        lcd.setCursor(0, 1);
+        lcd.print("failed to update data");
+        delay(2000);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print(storageName);
+      }
+    }
+    else
+    {
+      Serial.printf("Error occurred while sending HTTP POST: %s\n", http.errorToString(httpResponseCode).c_str());
+    }
   }
 }
 
@@ -329,6 +388,7 @@ void checkKEY()
       digitalWrite(greenLED, HIGH);
       digitalWrite(relayPin, HIGH);
       lastTrigger = millis();
+      isUnlock = true;
     }
     else
     {
