@@ -21,7 +21,7 @@
 #define DATABASE_URL "https://smart-foodbank-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
 // Firebase auth config
-#define USER_EMAIL "foodbank@admin.com"
+#define USER_EMAIL "storage@foodbank.com"
 #define USER_PASSWORD "haidil272"
 String uid;
 String storageName = "STORAGE";
@@ -56,7 +56,7 @@ boolean motionDetected = false;
 boolean humanMovement = false;
 boolean unlockByQr = false;
 
-int currentPin = 0;
+String currentPin = "";
 
 // initiate keypad
 const byte ROWS = 4; // four rows
@@ -66,7 +66,7 @@ char keys[ROWS][COLS] = {
     {'1', '2', '3', 'A'},
     {'4', '5', '6', 'B'},
     {'7', '8', '9', 'C'},
-    {'*', '0', ' ', 'D'}};
+    {'*', '0', '#', 'D'}};
 
 // keypad pins
 byte rowPins[ROWS] = {12, 14, 27, 26};
@@ -127,19 +127,21 @@ void loop()
 {
   now = millis();
 
-  if ((!isUnlock && now - sendDataprevMillis > 15000) || (!isUnlock && sendDataprevMillis == 0))
+  if ((!isUnlock && now - sendDataprevMillis > 5000) || (!isUnlock && sendDataprevMillis == 0))
   {
     sendDataprevMillis = millis();
     if (Firebase.RTDB.getBool(&fbdo, "/SfbClQ6PRR9UKREP5BwO/isUnlock"))
     {
       isUnlock = fbdo.boolData();
       lastTrigger = millis();
-      currentPin = Firebase.RTDB.getInt(&fbdo, "/SfbClQ6PRR9UKREP5BwO/currentPin");
 
       if (isUnlock)
       {
         unlockByQr = true;
+        if (Firebase.RTDB.getString(&fbdo, "/SfbClQ6PRR9UKREP5BwO/currentPin")) {
+          currentPin = fbdo.stringData();
         Serial.println(currentPin);
+        }
       }
     }
 
@@ -170,7 +172,7 @@ void loop()
       lcd.print(storageName);
       break;
     case '#':
-      delay(100); // added debounce
+      // delay(100); // added debounce
       checkKEY();
       break;
     default:
@@ -207,7 +209,8 @@ void loop()
     lcd.setCursor(0, 0);
     lcd.print(storageName);
     Firebase.RTDB.setBool(&fbdo, "SfbClQ6PRR9UKREP5BwO/isUnlock", false);
-    z = 0;
+    lcd.setCursor(0, 1);
+    z=0;
   }
 
   if (motionDetected && (now - motionStart > timeInterval))
@@ -240,7 +243,7 @@ void loop()
 
     if (unlockByQr)
     {
-      doc["retrivedPin"] = currentPin;
+      doc["retrievedPin"] = currentPin;
     }
     else
     {
@@ -269,6 +272,7 @@ void loop()
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print(storageName);
+        lcd.setCursor(0, 1);
       }
       else
       {
